@@ -428,6 +428,10 @@ build_instance() {
         /usr/bin/ditto "$PRIMARY_APP" "$target" || \
             fail_closed "Copying the primary app into staging failed."
     fi
+    # The vendor can ship read-only files (ChatGPT 26.924 did), and xattr cannot
+    # touch those. Modes are not part of the code signature, and this is only the
+    # staged copy, so make it writable before stripping metadata.
+    /bin/chmod -R u+w "$target" || fail_closed "Making the staged copy writable failed."
     /usr/bin/xattr -cr "$target" || fail_closed "Removing copied filesystem metadata failed."
     /usr/bin/codesign --verify --deep --strict "$target" >/dev/null 2>&1 || \
         fail_closed "The staged source copy did not retain the vendor signature."

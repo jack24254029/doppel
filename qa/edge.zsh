@@ -731,6 +731,30 @@ GUARD_OUT="$(HOME="$SIGN_USER_HOME" DOPPEL_HOME="$SCRATCH/ignored-sign-home" \
     || fail "an installed copy scrubs DOPPEL_SIGN_LEAF_SHA1 before the engine runs" "got: $GUARD_OUT"
 
 print -r -- ""
+print -r -- "a read-only file in the vendor app does not stop an instance being built"
+# ChatGPT 26.924 shipped one r--r--r-- file, and xattr -cr on the staged copy
+# failed on it, so every clone stayed on the old build after the update. Copy the
+# real primary (modes are not sealed, so it still verifies), lock one file, and
+# build against that copy.
+READONLY_PRIMARY="$SCRATCH/readonly-primary/ChatGPT.app"
+/bin/mkdir -p "${READONLY_PRIMARY:h}"
+/bin/cp -cR "$PRIMARY" "$READONLY_PRIMARY" 2>/dev/null || /usr/bin/ditto "$PRIMARY" "$READONLY_PRIMARY"
+/bin/chmod -R u+w "$READONLY_PRIMARY"
+/bin/chmod a-w "$READONLY_PRIMARY/Contents/Info.plist" "$READONLY_PRIMARY/Contents/PkgInfo"
+/usr/bin/codesign --verify --deep --strict "$READONLY_PRIMARY" >/dev/null 2>&1 \
+    && pass "the locked copy still passes the vendor signature check" \
+    || fail "the locked copy still passes the vendor signature check" "locking a file broke the seal"
+OUT="$(DOPPEL_HOME="$SCRATCH/readonly-home" DOPPEL_STATE_ROOT="$SCRATCH/readonly-state" \
+    DOPPEL_PRIMARY_APP="$READONLY_PRIMARY" \
+    "$CLI" create --name "Readonly Probe $$" --tint 3B82F6 --install-to "$APPS" 2>&1)"
+STATUS=$?
+check "create succeeds against it" "$STATUS" "0"
+[[ "$OUT" != *"filesystem metadata failed"* ]] \
+    && pass "and does not stop on the metadata step" \
+    || fail "and does not stop on the metadata step" "got: $OUT"
+/bin/chmod -R u+w "$SCRATCH/readonly-primary" 2>/dev/null
+
+print -r -- ""
 print -r -- "building the one instance the rest of the checks share"
 if ! "$CLI" create --name "$NAME" --tint A855F7 --install-to "$APPS" >/dev/null 2>&1; then
     print -u2 -r -- "  ✗ create failed; aborting"
