@@ -19,6 +19,47 @@ trap cleanup EXIT
 
 print -r -- "Doppel deep-link patch QA"
 
+# Synthetic slots cover old releases, enabled validation and fail-closed cases.
+if /usr/bin/python3 - "$PATCHER" "$SCRATCH" <<'PYDIGEST'
+import hashlib, plistlib, runpy, sys
+from pathlib import Path
+
+module = runpy.run_path(sys.argv[1])
+patch_digest, error = module["patch_integrity_digest"], module["PatchError"]
+root = Path(sys.argv[2])
+source, clone, framework = root / "source.plist", root / "clone.plist", root / "framework"
+for path, value in ((source, "a"), (clone, "b")):
+    path.write_bytes(plistlib.dumps({"ElectronAsarIntegrity": {
+        "Resources/app.asar": {"algorithm": "SHA256", "hash": value * 64}}}))
+digest = lambda value: hashlib.sha256(("Resources/app.asarSHA256" + value * 64).encode()).digest()
+marker = b"AGbevlPCksUGKNL8TSn7wGmJEuJsXb2A"
+slot = marker + b"\x01\x01" + digest("a")
+framework.write_bytes(b"legacy framework")
+assert not patch_digest(framework, source, clone)
+framework.write_bytes(slot * 2)
+assert patch_digest(framework, source, clone)
+assert framework.read_bytes() == (marker + b"\x01\x01" + digest("b")) * 2
+assert not patch_digest(framework, source, clone)
+for bad in (marker, marker + b"\x01\x02" + digest("a"),
+            marker + b"\x01\x01" + bytes(32)):
+    original = slot + bad
+    framework.write_bytes(original)
+    try:
+        patch_digest(framework, source, clone)
+    except error:
+        pass
+    else:
+        raise AssertionError("invalid integrity slot was accepted")
+    assert framework.read_bytes() == original
+framework.write_bytes(marker + bytes(34))
+assert not patch_digest(framework, source, clone)
+PYDIGEST
+then
+    pass "framework integrity stays enabled and invalid slots fail before mutation"
+else
+    fail "framework integrity stays enabled and invalid slots fail before mutation" "digest regression failed"
+fi
+
 if /usr/bin/python3 "$PATCHER" verify "$PRIMARY_ASAR" >/dev/null 2>&1; then
     fail "the unmodified primary is recognized as shared-scheme" \
         "verify incorrectly accepted the vendor codex:// behavior"

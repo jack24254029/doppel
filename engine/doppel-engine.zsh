@@ -11,7 +11,7 @@
 set -u
 setopt PIPE_FAIL
 
-readonly ENGINE_VERSION="27"
+readonly ENGINE_VERSION="28"
 
 # When this engine copy runs from inside an installed bundle, environment
 # overrides are ignored: otherwise a same-uid process could point a
@@ -493,6 +493,29 @@ build_instance() {
         "Set :ElectronAsarIntegrity:Resources/app.asar:hash $asar_hash" \
         "$target/Contents/Info.plist" >/dev/null || \
         fail_closed "Updating Electron's ASAR integrity metadata failed."
+
+    # New Electron releases seal the integrity dictionary inside the framework
+    # as well as in Info.plist. Refresh that digest without disabling validation.
+    local framework="$target/Contents/Frameworks/Codex Framework.framework" digest_status
+    digest_status="$(/usr/bin/python3 "$DEEP_LINK_PATCHER" integrity \
+        "$framework/Codex Framework" "$PRIMARY_APP/Contents/Info.plist" \
+        "$target/Contents/Info.plist")" || \
+        fail_closed "Updating Electron's framework integrity digest failed."
+    if [[ "$digest_status" == "updated" ]]; then
+        # Vendor helpers cannot load the now locally signed framework. Apply
+        # the same filtered runtime entitlements as the clone's main process.
+        local helper helper_entitlements="$entitlements_dir/helper.plist"
+        for helper in "$framework"/Helpers/*.app(N/); do
+            write_filtered_entitlements "$helper" "$helper_entitlements" && \
+                verify_filtered_entitlements "$helper_entitlements" || \
+                fail_closed "Filtering Electron helper entitlements failed."
+            /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --options runtime \
+                --preserve-metadata=identifier --entitlements "$helper_entitlements" \
+                "$helper" >/dev/null || fail_closed "Signing the Electron helper failed."
+        done
+        /usr/bin/codesign --force --sign "$SIGN_IDENTITY" --options runtime \
+            "$framework" >/dev/null || fail_closed "Signing the patched Electron framework failed."
+    fi
 
     # Finder provenance and resource-fork metadata are not executable content
     # and make an otherwise valid staged bundle fail code-signature sealing.

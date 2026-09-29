@@ -5,6 +5,7 @@ test:
     ./qa/release-notes.zsh
 
 qa:
+    ./qa/deep-link.zsh
     ./qa/e2e.zsh
     ./qa/edge.zsh
     ./qa/engine-launch.zsh

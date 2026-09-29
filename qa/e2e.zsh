@@ -179,7 +179,7 @@ check "registered OAuth callback scheme remains eligible" \
     "$(plist "$APP" CFBundleURLTypes.0.CFBundleURLSchemes.1)" "codex"
 check "deep-link patch recorded" "$(plist "$APP" DoppelDeepLinkScheme)" "codex-$SLUG"
 ROUTER_HASH="$(/usr/bin/shasum -a 256 "$CLI" | /usr/bin/awk '{print $1}')"
-check "transparent engine router version" "$(plist "$APP" DoppelEngineVersion)" "27"
+check "transparent engine router version" "$(plist "$APP" DoppelEngineVersion)" "28"
 check "transparent engine router hash recorded" "$(plist "$APP" DoppelRouterSHA256)" "$ROUTER_HASH"
 if [[ -x "$APP/Contents/Resources/Doppel/bin/doppel" && \
       -x "$APP/Contents/Resources/Doppel/engine/doppel-engine.zsh" && \
@@ -285,6 +285,23 @@ fi
 [[ ! -e "$HOME/Library/Application Support/Doppel/state/clone-launch/$SLUG" ]] && \
     pass "one-shot clone authorization is consumed" || \
     fail "one-shot clone authorization is consumed" "a reusable authorization was left behind"
+
+# A main process can adopt its profile and then die when the renderer loads
+# a locally signed framework. Require a renderer that survives startup too.
+renderer_pid=""
+for tick in {1..15}; do
+    renderer_pid="$(/usr/bin/pgrep -f "${RENAMED_APP}/Contents/Frameworks/.*Helpers/Codex [(]Renderer[)].app/Contents/MacOS/" | /usr/bin/head -1)"
+    [[ -n "$renderer_pid" ]] && break
+    /bin/sleep 1
+done
+if [[ -n "$renderer_pid" ]]; then
+    /bin/sleep 3
+fi
+if [[ -n "$renderer_pid" ]] && /bin/kill -0 "$renderer_pid" 2>/dev/null; then
+    pass "the renderer stays running with the locally signed framework"
+else
+    fail "the renderer stays running with the locally signed framework" "renderer did not survive startup"
+fi
 
 print -r -- ""
 print -r -- "remove"
