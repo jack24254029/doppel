@@ -14,9 +14,9 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description sparkle:format="markdown"><![CDATA[# Doppel 1.1.10
 
-- ChatGPT Personal and other cloned instances open again with ChatGPT 26.924. Doppel now refreshes the framework integrity digest and helper signatures when rebuilding a clone. Existing clones rebuild automatically; your accounts and profiles stay in place.
+- ChatGPT Personal and other cloned instances open again with ChatGPT 26.924. Doppel now refreshes the framework integrity digest and helper signatures when rebuilding a clone. After updating Doppel, choose Rebuild & Reopen for each affected instance. Your accounts and profiles stay in place.
 ]]></description>
-            <enclosure url="https://github.com/thomast8/doppel/releases/download/v1.1.10/Doppel-1.1.10-macOS.zip" length="3028971" type="application/octet-stream" sparkle:edSignature="IEA2WBAoodG/jYv+tOyRBoA3K/ySPK2muVHrGdTXV1A/Qnb6hKrdu+61NnhiRPgoCFJpvwQTe/ejLFrJNBXTBw=="/>
+            <enclosure url="https://github.com/thomast8/doppel/releases/download/v1.1.10/Doppel-1.1.10-macOS.zip" length="3028971" type="application/octet-stream" sparkle:edSignature="eXG4y3EEO4ApL7rtaFIJPLlypiCVTS+r+WfvPa8OMaNuBvmzO3G7DVrcoJYlg5WFLnCD0vfKiQtT/KE1g4tMAw=="/>
         </item>
         <item>
             <title>1.1.9</title>
