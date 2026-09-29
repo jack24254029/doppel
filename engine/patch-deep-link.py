@@ -24,6 +24,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import mmap
+import plistlib
 import os
 import re
 import stat
@@ -594,14 +596,68 @@ def verify(path: Path) -> str:
     return digest(archive.header_json)
 
 
+def patch_integrity_digest(framework: Path, source_info: Path, clone_info: Path) -> bool:
+    """Keep Electron's enabled framework digest in sync with the patched ASAR.
+
+    Electron's __asar_integrity slot hashes sorted path/algorithm/hash strings:
+    https://github.com/electron/electron/blob/main/shell/common/asar/integrity_digest.mm
+    Older frameworks have no slot. Validate every active slot before writing.
+    """
+    def info_digest(path: Path) -> bytes:
+        with path.open("rb") as file:
+            integrity = plistlib.load(file)["ElectronAsarIntegrity"]
+        hasher = hashlib.sha256()
+        for name, entry in sorted(integrity.items()):
+            if (not isinstance(name, str) or entry.get("algorithm") != "SHA256"
+                    or not re.fullmatch(r"[0-9a-f]{64}", entry.get("hash", ""))):
+                raise PatchError("invalid Electron ASAR integrity dictionary")
+            hasher.update((name + entry["algorithm"] + entry["hash"]).encode("utf-8"))
+        return hasher.digest()
+
+    source_digest, clone_digest = info_digest(source_info), info_digest(clone_info)
+    sentinel = b"AGbevlPCksUGKNL8TSn7wGmJEuJsXb2A"
+    with framework.open("r+b") as file, mmap.mmap(file.fileno(), 0) as binary:
+        offsets = []
+        offset = binary.find(sentinel)
+        while offset != -1:
+            slot = offset + len(sentinel)
+            if slot + 34 > len(binary):
+                raise PatchError("truncated Electron ASAR integrity slot")
+            used, version = binary[slot:slot + 2]
+            if used not in (0, 1) or (used and version != 1):
+                raise PatchError("unsupported Electron ASAR integrity slot")
+            if used:
+                current = binary[slot + 2:slot + 34]
+                if current not in (source_digest, clone_digest):
+                    raise PatchError("Electron framework digest does not match the source plist")
+                if current != clone_digest:
+                    offsets.append(slot + 2)
+            offset = binary.find(sentinel, slot + 34)
+        for offset in offsets:
+            binary[offset:offset + 32] = clone_digest
+        binary.flush()
+    return bool(offsets)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("patch", "verify"))
+    parser.add_argument("mode", choices=("patch", "verify", "integrity"))
     parser.add_argument("archive", type=Path)
+    parser.add_argument("source_info", type=Path, nargs="?")
+    parser.add_argument("clone_info", type=Path, nargs="?")
     arguments = parser.parse_args()
+    if arguments.mode == "integrity":
+        if arguments.source_info is None or arguments.clone_info is None:
+            parser.error("integrity requires framework, source plist and clone plist")
+    elif arguments.source_info is not None or arguments.clone_info is not None:
+        parser.error("patch/verify accept only an archive")
     if not arguments.archive.is_file():
         parser.error(f"archive does not exist: {arguments.archive}")
     try:
+        if arguments.mode == "integrity":
+            changed = patch_integrity_digest(arguments.archive, arguments.source_info, arguments.clone_info)
+            print("updated" if changed else "unchanged")
+            return 0
         header_hash = patch(arguments.archive) if arguments.mode == "patch" else verify(arguments.archive)
     except (OSError, PatchError) as error:
         print(f"patch-deep-link: {error}", file=sys.stderr)
