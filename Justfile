@@ -3,9 +3,9 @@ set shell := ["zsh", "-cu"]
 test:
     ./app/test.zsh
     ./qa/release-notes.zsh
-    ./qa/deep-link.zsh
 
 qa:
+    ./qa/deep-link.zsh
     ./qa/e2e.zsh
     ./qa/edge.zsh
     ./qa/engine-launch.zsh
